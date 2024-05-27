@@ -1,50 +1,53 @@
 const fetch = require("node-fetch");
 
-exports.handler = async function (event) {
-  const mySiteUrl = process.env.MY_SITE_URL || "*";
-  const scoreThreshold = parseFloat(process.env.SCORE_THRESHOLD) || 0.5;
-  const secretKey = process.env.RECAPTCHA_SECRET_KEY;
-  const endpointUrl = process.env.ENDPOINT_URL;
+exports.handler = async function (event, context) {
+  // Use environment variables for CORS origin and score threshold
+  const mySiteUrl = process.env.MY_SITE_URL || "*"; // Fallback to '*' if not set
+  const scoreThreshold = parseFloat(process.env.SCORE_THRESHOLD) || 0.5; // Default to 0.5 if not set
 
+  // Define CORS headers for cross-origin requests
   const corsHeaders = {
-    "Access-Control-Allow-Origin": mySiteUrl,
+    "Access-Control-Allow-Origin": mySiteUrl, // Use site url for better security
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "86400",
+    "Access-Control-Max-Age": "86400", // Cache preflight request for 86400 seconds
   };
 
-  console.log("HTTP Method:", event.httpMethod); // Log the HTTP method
-
+  // Handle OPTIONS request for CORS preflight
   if (event.httpMethod === "OPTIONS") {
     return {
-      statusCode: 204,
+      statusCode: 204, // No content response for preflight
       headers: corsHeaders,
       body: "",
     };
   }
 
+  // Restrict to POST requests only
   if (event.httpMethod !== "POST") {
     return {
-      statusCode: 405,
+      statusCode: 405, // Method not allowed
       headers: corsHeaders,
       body: "Method Not Allowed",
     };
   }
 
   try {
-    console.log("Request Body:", event.body); // Log the request body
-
+    // Parse the JSON body of the request
     const body = JSON.parse(event.body);
-    const token = body.token;
+    const token = body.token; // Extract the ReCAPTCHA token
 
+    // Check for the presence of the ReCAPTCHA token
     if (!token) {
       return {
-        statusCode: 400,
+        statusCode: 400, // Bad request
         headers: corsHeaders,
         body: "Token is required",
       };
     }
 
+    const secretKey = process.env.RECAPTCHA_SECRET_KEY; // Retrieve secret key from environment variables
+
+    // Perform ReCAPTCHA verification
     const verificationResponse = await fetch(
       "https://www.google.com/recaptcha/api/siteverify",
       {
@@ -53,21 +56,26 @@ exports.handler = async function (event) {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: `secret=${secretKey}&response=${token}`,
-      }
+      },
     );
 
+    // Check if ReCAPTCHA verification was successful
     if (!verificationResponse.ok) {
-      throw new Error(`Error in ReCAPTCHA verification: ${verificationResponse.status}`);
+      throw new Error(
+        `Error in ReCAPTCHA verification: ${verificationResponse.status}`,
+      );
     }
 
     const verificationData = await verificationResponse.json();
-    console.log("ReCAPTCHA Verification Data:", verificationData); // Log the verification data
 
     if (verificationData.success && verificationData.score >= scoreThreshold) {
-      const formData = body.formData;
-      const formBody = new URLSearchParams(formData).toString();
-      console.log("Form Data:", formBody); // Log the form data being forwarded
+      const formData = body.formData; // Extract form data from the request body
+      const endpointUrl = process.env.ENDPOINT_URL; // Endpoint URL for forwarding the data
 
+      // Convert formData object to URL-encoded string
+      const formBody = new URLSearchParams(formData).toString();
+
+      // Forward the form data to the specified endpoint
       const forwardResponse = await fetch(endpointUrl, {
         method: "POST",
         body: formBody,
@@ -76,13 +84,14 @@ exports.handler = async function (event) {
         },
       });
 
+      // Check if data forwarding was successful
       if (!forwardResponse.ok) {
         throw new Error(`Error forwarding data: ${forwardResponse.status}`);
       }
 
       const forwardData = await forwardResponse.json();
-      console.log("Forward Response Data:", forwardData); // Log the forward response data
 
+      // Return the response from the endpoint
       return {
         statusCode: 200,
         headers: corsHeaders,
@@ -93,6 +102,7 @@ exports.handler = async function (event) {
         }),
       };
     } else {
+      // Handle low-score submissions or verification failure
       return {
         statusCode: 400,
         headers: corsHeaders,
@@ -104,6 +114,7 @@ exports.handler = async function (event) {
       };
     }
   } catch (error) {
+    // Log and return server error
     console.error("Server Error:", error);
     return {
       statusCode: 500,
