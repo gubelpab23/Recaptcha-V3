@@ -13,7 +13,8 @@ exports.handler = async function (event) {
     "Access-Control-Max-Age": "86400",
   };
 
-  // Handle CORS preflight requests
+  console.log("HTTP Method:", event.httpMethod); // Log the HTTP method
+
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 204,
@@ -22,7 +23,6 @@ exports.handler = async function (event) {
     };
   }
 
-  // Handle only POST requests
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -32,6 +32,8 @@ exports.handler = async function (event) {
   }
 
   try {
+    console.log("Request Body:", event.body); // Log the request body
+
     const body = JSON.parse(event.body);
     const token = body.token;
 
@@ -59,10 +61,12 @@ exports.handler = async function (event) {
     }
 
     const verificationData = await verificationResponse.json();
+    console.log("ReCAPTCHA Verification Data:", verificationData); // Log the verification data
 
     if (verificationData.success && verificationData.score >= scoreThreshold) {
       const formData = body.formData;
       const formBody = new URLSearchParams(formData).toString();
+      console.log("Form Data:", formBody); // Log the form data being forwarded
 
       const forwardResponse = await fetch(endpointUrl, {
         method: "POST",
@@ -77,6 +81,7 @@ exports.handler = async function (event) {
       }
 
       const forwardData = await forwardResponse.json();
+      console.log("Forward Response Data:", forwardData); // Log the forward response data
 
       return {
         statusCode: 200,
